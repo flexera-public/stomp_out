@@ -1,0 +1,6 @@
+.idea/*
+pkg/*
+.bundle/*
+measurement/*
+*.swp
+Gemfile.lock

@@ -1,0 +1,91 @@
+= Introduction
+
+StompOut is an implementation of the Simple Text Orientated Messaging Protocol (STOMP[http://stomp.github.io]).
+Both a client and server interface to the protocol are provided.
+They are implemented independent of the underlying network protocol over which they are applied.
+In that sense they run outboard of the underlying connection, hence "Out" in the name.
+The Client and Server classes provide a function for receiving blocks of STOMP encoded
+data from the connection and they expect the subclass to implement a function
+for sending data that has been STOMP encoded over the connection.
+
+The Client and Server classes support version 1.0, 1.1, and 1.2 of STOMP. The built-in version
+negotiation in the protocol determines which is actually applied for a given connection.
+
+= Interface
+
+== Client
+
+There are two parts to the interface: the functions the StompOut::Client[link:lib/stomp_out/client.rb] class exposes
+and the functions the Client subclass must implement.
+
+The Client exposes the following functions:
+* <b>receive_data</b> - process data received over connection from server
+* <b>connect</b> - connect to server
+* <b>message</b> - send message to given destination
+* <b>subscribe</b> - register to listen to given destination
+* <b>unsubscribe</b> - remove an existing subscription
+* <b>ack</b> - acknowledge consumption of a message from a subscription
+* <b>nack</b> - tell the server that a message was not consumed
+* <b>begin</b> - start a transaction
+* <b>commit</b> - commit a transaction
+* <b>abort</b> - roll back a transaction
+* <b>disconnect</b> - disconnect from the server
+* <b>subscriptions</b> - list active subscriptions
+* <b>transactions</b> - list active transactions
+
+The Client subclass must implement the following functions:
+* <b>send_data</b> - send data over connection to server
+* <b>on_connected</b> - handle notification that now connected
+* <b>on_message</b> - handle message received from server
+* <b>on_receipt</b> - handle notification that request was successfully handled by server
+* <b>on_error</b> - handle notification that a client request failed and connection should be closed
+
+== Server
+
+There are two parts to the interface: the functions the StompOut::Server[link:lib/stomp_out/server.rb] class exposes
+and the functions the Server subclass must implement.
+
+The Server exposes the following functions:
+* <b>receive_data</b> - process data received over connection from client
+* <b>disconnect</b> - stop service in anticipation of connection being closed
+* <b>message</b> - send message from a subscribed destination to client
+
+The Server subsclass must implement the following functions:
+* <b>send_data</b> - send data over connection to client
+* <b>on_connect</b> - handle connect request from client including any authentication
+* <b>on_message</b> - handle delivery of message from client to given destination
+* <b>on_subscribe</b> - subscribe client to messages from given destination
+* <b>on_unsubscribe</b> - unsubscribe client from given destination
+* <b>on_ack</b> - handle acknowledgement from client that a message has been successfully processed
+* <b>on_nack</b> - handle negative acknowledgement from client for a message
+* <b>on_error</b> - handle notification that a client or server request failed and connection should be closed
+* <b>on_disconnect</b> - handle request from client to close connection
+
+The above functions should raise StompOut::ApplicationError[link:lib/stomp_out/errors.rb] for requests
+that violate any application specific constraints.
+
+= Example
+
+The gem contains client[link:examples/websocket_client.rb] and server[link:examples/websocket_server.rb]
+examples of how it can be applied in a WebSocket environment. The server example can be run in the
+examples directory using thin:
+  thin -R config.ru start
+The client example is a script that can executed against the server, e.g., to produce messages:
+  ./websocket_client.rb -u ws://0.0.0.0:3000 -d /queue -m "hi"
+  ./websocket_client.rb -u ws://0.0.0.0:3000 -d /queue -m "bye"
+and to consume messages:
+  ./websocket_client.rb -u ws://0.0.0.0:3000 -d /queue -a client -r
+
+= Dependencies
+
+The simple_uuid gem is used by the Server for generating subscription identifiers.
+The eventmachine gem is used only if the STOMP heartbeat feature is used.
+The the json gem is used by the Client only if a content-type is "application/json"
+and the :auto_json option is enabled.
+The examples make use of the faye-websocket, eventmachine, trollop, and json gems.
+
+= License
+
+This software is released under the {MIT License}[http://www.opensource.org/licenses/MIT]. Please see link:LICENSE for further details.
+
+Copyright (c) 2015 RightScale
