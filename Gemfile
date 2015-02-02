@@ -6,6 +6,9 @@ gem 'simple_uuid', '~> 0.2'
 group :development do
   gem 'eventmachine', '~> 1.0'
   gem 'faye-websocket', '~> 0.7'
+  gem 'rack', '~> 1.5'
+  gem 'websocket-rack', '~> 0.4'
+  gem 'thin'
   gem 'debugger', '~> 1.5',
       :platforms => :ruby_19
   gem 'flexmock', '~> 0.8'

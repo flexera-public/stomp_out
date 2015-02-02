@@ -21,7 +21,17 @@
 
 module StompOut
 
-  # STOMP client for use with an existing server connection, e.g., a WebSocket
+  # Abstract base class for STOMP client for use with an existing server connection, such
+  # as a WebSocket. Derived classes are responsible for supplying the following functions:
+  #   send_data(data) - send data over connection
+  #   on_connected(frame, session_id, server_name) - handle notification that now connected
+  #   on_message(frame, destination, message, content_type, message_id, ack_id) - handle message
+  #     received from server
+  #   on_receipt(frame, receipt_id) - handle notification that a request was successfully
+  #     handled by server
+  #   on_error(frame, message, details, receipt_id) - handle notification from server
+  #     that a request failed and that the connection should be closed
+  #
   class Client
 
     SUPPORTED_VERSIONS = ["1.0", "1.1", "1.2"]
@@ -36,38 +46,26 @@ module StompOut
 
     MIN_SEND_HEARTBEAT = 5000
 
-    attr_reader :connected, :version, :session_id, :server_name, :host, :heartbeat
+    attr_reader :version, :session_id, :server_name, :host, :heartbeat
 
     # Create STOMP client
     #
-    # @param [Object] user of this client that has an existing connection to a STOMP server
-    #   and that can respond to the following callbacks (see ClientUser for more details):
-    #   send_data(data) - send data over connection
-    #   on_connected(frame, session_id, server_name) - handle notification that now connected
-    #   on_message(frame, destination, message, content_type, message_id, ack_id) - handle message
-    #     received from server
-    #   on_receipt(frame, receipt_id) - handle notification that a request was successfully
-    #     handled by server
-    #   on_error(frame, message, details, receipt_id) - handle notification from server
-    #     that a request failed and that the connection should be closed
-    #
-    # @option options [String] :host to which user wishes to connect; if not using virtual hosts,
+    # @option options [String] :host to which client wishes to connect; if not using virtual hosts,
     #   recommended setting is the host name that the socket in use was connected against,
-    #   or any name of user's choosing; defaults to "stomp"
+    #   or any name of client's choosing; defaults to "stomp"
     # @option options [Boolean] :receipt enabled for all requests except connect; disabled
     #   by default but can still enable on individual requests
     # @option options [Boolean] :auto_json encode/decode "application/json" content-type
     # @option options [Integer] :min_send_interval in msec that this client can guarantee;
     #   defaults to MIN_SEND_HEARTBEAT
-    def initialize(user, options = {})
+    def initialize(options = {})
       @options = options
-      @user = user
       @host = @options[:host] || "stomp"
       @parser = StompOut::Parser.new
       @ack_id = 0
       @message_ids = {} # ack ID is key
-      @subscription_id = 0
-      @subscriptions = {} # destination is key
+      @subscribe_id = 0
+      @subscribes = {} # destination is key
       @transaction_id = 0
       @transaction_ids = []
       @receipt = options[:receipt]
@@ -80,7 +78,7 @@ module StompOut
     #
     # @return [Array<String>] subscription destinations
     def subscriptions
-      @subscriptions.keys
+      @subscribes.keys
     end
 
     # List active transactions
@@ -90,33 +88,14 @@ module StompOut
       @transaction_ids
     end
 
-    # Process data received over connection from server
+    # Determine whether connected to STOMP server
     #
-    # @param [String] data to be processed
-    #
-    # @return [TrueClass] always true
-    def receive_data(data)
-      @parser << data
-      process_frames
-      @heartbeat.received_data if @heartbeat
-      true
-    rescue StandardError => e
-      report_error(e)
+    # @return [Boolean] true if connected, otherwise false
+    def connected?
+      !!@connected
     end
 
-    # Send data over connection to server
-    # Not intended for use by end user of this class
-    #
-    # @param [String] data to be sent
-    #
-    # @return [TrueClass] always true
-    def send_data(data)
-      @user.send_data(data)
-      @heartbeat.sent_data if @heartbeat
-      true
-    end
-
-    # Report to user that an error was encountered locally
+    # Report to client that an error was encountered locally
     # Not intended for use by end user of this class
     #
     # @param [Exception, String] error being reported
@@ -133,8 +112,88 @@ module StompOut
         message = error.to_s
       end
       frame = Frame.new("ERROR", {"message" => message}, details)
-      @user.on_error(frame, message, details, receipt_id = nil)
+      on_error(frame, message, details, receipt_id = nil)
       true
+    end
+
+    # Process data received over connection from server
+    #
+    # @param [String] data to be processed
+    #
+    # @return [TrueClass] always true
+    def receive_data(data)
+      @parser << data
+      process_frames
+      @heartbeat.received_data if @heartbeat
+      true
+    rescue StandardError => e
+      report_error(e)
+    end
+
+    ##################################
+    ## STOMP client subclass functions
+    ##################################
+
+    # Send data over connection to server
+    #
+    # @param [String] data that is STOMP encoded
+    #
+    # @return [TrueClass] always true
+    def send_data(data)
+      raise "Not implemented"
+    end
+
+    # Handle notification that now connected to server
+    #
+    # @param [Frame] frame received from server
+    # @param [String] session_id uniquely identifying the given STOMP session
+    # @param [String, NilClass] server_name in form "<name>/<version>" with
+    #   "/<version>" being optional; nil if not provided by server
+    #
+    # @return [TrueClass] always true
+    def on_connected(frame, session_id, server_name)
+      raise "Not implemented"
+    end
+
+    # Handle message received from server
+    #
+    # @param [Frame] frame received from server
+    # @param [String] destination to which the message was sent
+    # @param [Object] message body; if content_type is "application/json"
+    #   and :auto_json client option specified the message is JSON decoded
+    # @param [String] content_type of message in MIME terms, e.g., "text/plain"
+    # @param [String] message_id uniquely identifying message
+    # @param [String, NilClass] ack_id to be used when acknowledging message
+    #   to server if acknowledgement enabled
+    #
+    # @return [TrueClass] always true
+    def on_message(frame, destination, message, content_type, message_id, ack_id)
+      raise "Not implemented"
+    end
+
+    # Handle notification that a request was successfully handled by server
+    #
+    # @param [Frame] frame received from server
+    # @param [String] receipt_id identifying request completed (client request
+    #   functions optionally return a receipt_id)
+    #
+    # @return [TrueClass] always true
+    def on_receipt(frame, receipt_id)
+      raise "Not implemented"
+    end
+
+    # Handle notification from server that a request failed and that the connection
+    # should be closed
+    #
+    # @param [Frame] frame received from server
+    # @param [String] error message
+    # @param [String, NilClass] details about the error, e.g., the frame that failed
+    # @param [String, NilClass] receipt_id identifying request that failed (Client
+    #   functions optionally return a receipt_id)
+    #
+    # @return [TrueClass] always true
+    def on_error(frame, error, details, receipt_id)
+      raise "Not implemented"
     end
 
     ########################
@@ -208,12 +267,12 @@ module StompOut
     # @raise [ApplicationError] duplicate subscription
     def subscribe(destination, ack = nil, receipt = nil, headers = nil)
       raise ProtocolError.new("Not connected") unless @connected
-      raise ApplicationError.new("Already subscribed to '#{destination}'") if @subscriptions[destination]
+      raise ApplicationError.new("Already subscribed to '#{destination}'") if @subscribes[destination]
       raise ProtocolError.new("Invalid 'ack' setting") if ack && !ACK_SETTINGS[@version].include?(ack)
-      @subscriptions[destination] = {:id => (@subscription_id += 1).to_s, :ack => ack}
+      @subscribes[destination] = {:id => (@subscribe_id += 1).to_s, :ack => ack}
       headers ||= {}
       headers["destination"] = destination
-      headers["id"] = @subscription_id.to_s
+      headers["id"] = @subscribe_id.to_s
       headers["ack"] = ack if ack
       frame = send_frame("SUBSCRIBE", headers, body = nil, content_type = nil, receipt)
       frame.headers["receipt"]
@@ -231,10 +290,10 @@ module StompOut
     # @raise [ApplicationError] subscription not found
     def unsubscribe(destination, receipt = nil, headers = nil)
       raise ProtocolError.new("Not connected") unless @connected
-      subscription = @subscriptions.delete(destination)
-      raise ApplicationError.new("Subscription to '#{destination}' not found") if subscription.nil?
+      subscribe = @subscribes.delete(destination)
+      raise ApplicationError.new("Subscription to '#{destination}' not found") if subscribe.nil?
       headers ||= {}
-      headers["id"] = subscription[:id]
+      headers["id"] = subscribe[:id]
       headers["destination"] = destination if @version == "1.0"
       frame = send_frame("UNSUBSCRIBE", headers, body = nil, content_type = nil, receipt)
       frame.headers["receipt"]
@@ -383,7 +442,7 @@ module StompOut
         @heartbeat.start
       end
       @connected = true
-      @user.on_connected(frame, @session_id, @server_name)
+      on_connected(frame, @session_id, @server_name)
       true
     end
 
@@ -399,15 +458,16 @@ module StompOut
     #   match destination, duplicate ack ID
     def receive_message(frame, body)
       required = {"destination" => [], "message-id" => [], "subscription" => ["1.0"]}
-      destination, message_id, subscription_id = frame.require(@version, required)
-      if (subscription = @subscriptions[destination])
-        if subscription[:id] != subscription_id && @version != "1.0"
+      destination, message_id, subscribe_id = frame.require(@version, required)
+      if (subscribe = @subscribes[destination])
+        if subscribe[:id] != subscribe_id && @version != "1.0"
           raise ApplicationError.new("Subscription does not match destination '#{destination}'", frame)
         end
         ack_id = nil
-        if subscription[:ack] != "auto"
-          # Create ack ID if there is none so that user can always rely on its use for ack/nack
-          # and then correspondingly track message IDs so that convert back to ack ID when needed
+        if subscribe[:ack] != "auto"
+          # Create ack ID if there is none so that user of this class can always rely
+          # on its use for ack/nack and then correspondingly track message IDs so that
+          # convert back to ack ID when needed
           ack_id = frame.require(@version, "ack" => ["1.0", "1.1"])
           ack_id ||= (@ack_id += 1).to_s
           if (message_id2 = @message_ids[ack_id])
@@ -419,7 +479,7 @@ module StompOut
         raise ApplicationError.new("Subscription to '#{destination}' not found", frame)
       end
       content_type = frame.headers["content-type"] || "text/plain"
-      @user.on_message(frame, destination, body, content_type, message_id, ack_id)
+      on_message(frame, destination, body, content_type, message_id, ack_id)
       true
     end
 
@@ -435,7 +495,7 @@ module StompOut
     def receive_receipt(frame, body)
       id = frame.require(@version, "receipt-id" => [])
       raise ApplicationError.new("Request not found matching receipt #{id}") if @receipted_frames.delete(id).nil?
-      @user.on_receipt(frame, id)
+      on_receipt(frame, id)
     end
 
     # Handle error reported by server
@@ -445,7 +505,7 @@ module StompOut
     #
     # @return [TrueClass] always true
     def receive_error(frame, body)
-      @user.on_error(frame, frame.headers["message"], body, frame.headers["receipt-id"])
+      on_error(frame, frame.headers["message"], body, frame.headers["receipt-id"])
       true
     end
 
@@ -511,6 +571,7 @@ module StompOut
         @receipted_frames[receipt_id] = frame
       end
       send_data(frame.to_s)
+      @heartbeat.sent_data if @heartbeat
       frame
     end
 

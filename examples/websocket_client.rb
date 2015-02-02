@@ -9,50 +9,33 @@ require 'trollop'
 require 'json'
 require 'stomp_out'
 
-# Example use of StompOut::Client with a WebSocket connection to a STOMP server
-class WebSocketClient
+# Example of a StompOut::Client subclass in a WebSocket environment
+class WebSocketClient < StompOut::Client
 
-  def self.run
-    r = WebSocketClient.new
-    options = r.parse_args
-    r.start(options)
-  end
-
-  def start(options)
-    @destination = options[:destination]
-    @ack = options[:ack] || "auto"
-    @message = options[:message]
+  def initialize(options = {})
+    @parent = options.delete(:parent)
+    @destination = options.delete(:destination)
+    @ack = options.delete(:ack) || "auto"
+    @message = options.delete(:message)
     @receipts = {}
 
-    ['INT', 'TERM'].each do |signal|
-      trap(signal) do stop end
-    end
-
-    EM.run do
-      @stomp = StompOut::Client.new(self, :host => options[:host], :receipt => options[:receipt], :auto_json => true)
-      @ws = Faye::WebSocket::Client.new(options[:url])
-      @ws.onerror = lambda { |e| puts "error #{e.message}"; stop }
-      @ws.onclose = lambda { |e| puts "close #{e.code} #{e.reason}"; stop }
-      @ws.onmessage = lambda { |e| puts "received: #{e.data}"; @stomp.receive_data(JSON.load(e.data)) }
-      @stomp.connect
-    end
+    super(options)
   end
 
   def send_data(data)
-    data = JSON.dump(data)
-    puts "sending: #{data}"
-    @ws.send(data)
+    @parent.send_data(data)
   end
 
   def on_connected(frame, session_id, server_name)
-    @connected = true
     puts "connected to #{server_name} for session #{session_id}"
-    puts "subscribing to #{@destination} with ack #{@ack}"
-    receipt_id = @stomp.subscribe(@destination, @ack, receipt = true)
-    @receipts[receipt_id] = "subscribe to #{@destination} with ack #{@ack}" if receipt_id
     if @message
-      receipt_id = @stomp.message(@destination, @message)
+      receipt_id = message(@destination, @message)
       @receipts[receipt_id] = "message to #{@destination}" if receipt_id
+      close
+    else
+      puts "subscribing to #{@destination} with ack #{@ack}"
+      receipt_id = subscribe(@destination, @ack, receipt = true)
+      @receipts[receipt_id] = "subscribe to #{@destination} with ack #{@ack}" if receipt_id
     end
   end
 
@@ -60,7 +43,7 @@ class WebSocketClient
     puts "received #{content_type} message #{message_id} from #{destination} " +
          "with ack #{ack_id.inspect}: #{message.inspect}"
     if @ack != "auto"
-      receipt_id = @stomp.ack(ack_id)
+      receipt_id = ack(ack_id)
       @receipts[receipt_id] = "ack #{ack_id}" if receipt_id
     end
   end
@@ -71,28 +54,63 @@ class WebSocketClient
   end
 
   def on_error(frame, error, details, receipt_id)
-    puts "error with receipt_id #{receipt_id.inspect}: #{error}" + (details ? "\n#{details}" : "")
-    stop
+    receipt = receipt_id ? " with receipt #{receipt_id.inspect}" : nil
+    puts "error#{receipt}: #{error}" + (details ? "\n#{details}" : "")
+    close
+  end
+
+  def close
+    if connected?
+      if @subscribed
+        @subscribed = false
+        puts "unsubscribing from #{@destination}"
+        receipt_id = unsubscribe(@destination)
+        @receipts[receipt_id] = "unsubscribe from #{@destination}" if receipt_id
+      end
+      receipt_id = disconnect
+      @receipts[receipt_id] = "disconnect" if receipt_id
+      @parent.stop
+    end
+  end
+end
+
+# Simple application using WebSocketClient
+class WebSocketClientApp
+
+  def self.run
+    r = WebSocketClientApp.new
+    options = r.parse_args
+    r.start(options)
+  end
+
+  def start(options)
+    ['INT', 'TERM'].each do |signal|
+      trap(signal) do stop end
+    end
+
+    EM.run do
+      @client = WebSocketClient.new(options.merge(:parent => self, :name => self.class.name, :auto_json => true))
+      @websocket = Faye::WebSocket::Client.new(options[:url])
+      @websocket.onerror = lambda { |e| puts "error #{e.message}"; stop }
+      @websocket.onclose = lambda { |e| puts "close #{e.code} #{e.reason}"; stop }
+      @websocket.onmessage = lambda { |e| puts "received #{e.data}"; @client.receive_data(JSON.load(e.data)) }
+      @client.connect
+    end
+  end
+
+  def send_data(data)
+    data = JSON.dump(data)
+    puts "sending: #{data}"
+    @websocket.send(data)
   end
 
   def stop
     if EM.reactor_running?
-      if @stomp && @connected
-        @connected = false
-        if @subscribed
-          @subscribed = false
-          puts "unsubscribing from #{@destination}"
-          receipt_id = @stomp.unsubscribe(@destination)
-          @receipts[receipt_id] = "unsubscribe from #{@destination}" if receipt_id
-        end
-        receipt_id = @stomp.disconnect
-        @receipts[receipt_id] = "disconnect" if receipt_id
-      end
+      @client.close if @client
 
-      # Give server chance to respond before disconnect
-      EM.add_timer(0.25) do
-        @ws.close if @ws
-        EM.add_timer(0.25) { EM.stop }
+      EM.next_tick do
+        @websocket.close if @websocket
+        EM.next_tick { EM.stop }
       end
     end
   end
@@ -119,17 +137,16 @@ class WebSocketClient
     begin
       yield
     rescue Trollop::VersionNeeded
-      puts(version)
+      puts version
       exit 0
     rescue Trollop::HelpNeeded
-      puts("Usage: websocket_client --url <s> --destination <s> [--host <s> --ack <s> --receipt --message <s>]")
+      puts "Usage: websocket_client --url <s> --destination <s> [--host <s> --ack <s> --receipt --message <s>]"
       exit 0
     rescue Trollop::CommandlineError => e
       STDERR.puts e.message + "\nUse --help for additional information"
       exit 1
     end
   end
+end
 
-end # WebSocketClient
-
-WebSocketClient.run
+WebSocketClientApp.run

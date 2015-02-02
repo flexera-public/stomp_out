@@ -141,6 +141,7 @@ module StompOut
           @sent_data = false
         else
           @stomp.send_data(HEARTBEAT)
+          @sent_data = true
         end
       end
     end

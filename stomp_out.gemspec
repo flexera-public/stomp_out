@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Lee Kirchhoff"]
-  s.date = "2015-01-23"
+  s.date = "2015-02-02"
   s.description = "This implementation of STOMP is aimed at environments where a network connection, such as a WebSocket or TCP socket, is created and then raw data from that connection is passed to/from the STOMP client or server messaging layer provided by this gem."
   s.email = "support@rightscale.com"
   s.extra_rdoc_files = [
@@ -23,15 +23,16 @@ Gem::Specification.new do |s|
     "README.rdoc",
     "Rakefile",
     "VERSION",
+    "examples/config.ru",
+    "examples/websocket_client.rb",
+    "examples/websocket_server.rb",
     "lib/stomp_out.rb",
     "lib/stomp_out/client.rb",
-    "lib/stomp_out/client_user.rb",
     "lib/stomp_out/errors.rb",
     "lib/stomp_out/frame.rb",
     "lib/stomp_out/heartbeat.rb",
     "lib/stomp_out/parser.rb",
     "lib/stomp_out/server.rb",
-    "lib/stomp_out/server_user.rb",
     "stomp_out.gemspec"
   ]
   s.homepage = "https://github.com/rightscale/stomp_out"
@@ -48,6 +49,9 @@ Gem::Specification.new do |s|
       s.add_runtime_dependency(%q<simple_uuid>, ["~> 0.2"])
       s.add_development_dependency(%q<eventmachine>, ["~> 1.0"])
       s.add_development_dependency(%q<faye-websocket>, ["~> 0.7"])
+      s.add_development_dependency(%q<rack>, ["~> 1.5"])
+      s.add_development_dependency(%q<websocket-rack>, ["~> 0.4"])
+      s.add_development_dependency(%q<thin>, [">= 0"])
       s.add_development_dependency(%q<debugger>, ["~> 1.5"])
       s.add_development_dependency(%q<flexmock>, ["~> 0.8"])
       s.add_development_dependency(%q<jeweler>, ["~> 1.8.3"])
@@ -60,6 +64,9 @@ Gem::Specification.new do |s|
       s.add_dependency(%q<simple_uuid>, ["~> 0.2"])
       s.add_dependency(%q<eventmachine>, ["~> 1.0"])
       s.add_dependency(%q<faye-websocket>, ["~> 0.7"])
+      s.add_dependency(%q<rack>, ["~> 1.5"])
+      s.add_dependency(%q<websocket-rack>, ["~> 0.4"])
+      s.add_dependency(%q<thin>, [">= 0"])
       s.add_dependency(%q<debugger>, ["~> 1.5"])
       s.add_dependency(%q<flexmock>, ["~> 0.8"])
       s.add_dependency(%q<jeweler>, ["~> 1.8.3"])
@@ -73,6 +80,9 @@ Gem::Specification.new do |s|
     s.add_dependency(%q<simple_uuid>, ["~> 0.2"])
     s.add_dependency(%q<eventmachine>, ["~> 1.0"])
     s.add_dependency(%q<faye-websocket>, ["~> 0.7"])
+    s.add_dependency(%q<rack>, ["~> 1.5"])
+    s.add_dependency(%q<websocket-rack>, ["~> 0.4"])
+    s.add_dependency(%q<thin>, [">= 0"])
     s.add_dependency(%q<debugger>, ["~> 1.5"])
     s.add_dependency(%q<flexmock>, ["~> 0.8"])
     s.add_dependency(%q<jeweler>, ["~> 1.8.3"])

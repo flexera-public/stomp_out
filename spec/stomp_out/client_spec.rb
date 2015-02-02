@@ -1,5 +1,51 @@
 require 'spec_helper'
-require File.join(File.dirname(__FILE__), '..', '..', 'lib', 'stomp_out', 'client_user')
+
+# Mock client with subclass interface as required by Client
+class ClientMock < StompOut::Client
+  attr_reader :called, :params
+
+  def initialize(options = {})
+    @called = []
+    @params = {}
+    super
+  end
+
+  def send_data(data)
+    @called << :send_data
+    @params[:data] = data
+  end
+
+  def on_connected(frame, session_id, server_name)
+    @called << :on_connected
+    @params[:frame] = frame
+    @params[:session_id] = session_id
+    @params[:server_name] = server_name
+  end
+
+  def on_message(frame, destination, message, content_type, message_id, ack_id)
+    @called << :on_message
+    @params[:frame] = frame
+    @params[:destination] = destination
+    @params[:message] = message
+    @params[:content_type] = content_type
+    @params[:message_id] = message_id
+    @params[:ack_id] = ack_id
+  end
+
+  def on_receipt(frame, receipt_id)
+    @called << :on_receipt
+    @params[:frame] = frame
+    @params[:receipt_id] = receipt_id
+  end
+
+  def on_error(frame, error, details, receipt_id)
+    @called << :on_error
+    @params[:frame] = frame
+    @params[:error] = error
+    @params[:details] = details
+    @params[:receipt_id] = receipt_id
+  end
+end
 
 describe StompOut::Client do
 
@@ -7,14 +53,13 @@ describe StompOut::Client do
 
   before(:each) do
     @options = {}
-    @user = StompOut::ClientUser.new
-    @client = StompOut::Client.new(@user, @options)
+    @client = ClientMock.new(@options)
   end
 
   context :initialize do
     it "initializes attributes and with virtual host defaulting 'stomp'" do
       @client.host.should == "stomp"
-      @client.connected.should == false
+      @client.connected?.should be false
       @client.version.should be nil
       @client.session_id.should be nil
       @client.server_name.should be nil
@@ -22,12 +67,12 @@ describe StompOut::Client do
     end
 
     it "sets virtual host if specified" do
-      @client = StompOut::Client.new(@user, @options.merge(:host => "vhost"))
+      @client = ClientMock.new(@options.merge(:host => "vhost"))
       @client.host.should == "vhost"
     end
 
     it "enables receipts if specified" do
-      @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+      @client = ClientMock.new(@options.merge(:receipt => true))
       @client.instance_variable_get(:@receipt).should be true
     end
   end
@@ -51,9 +96,9 @@ describe StompOut::Client do
   context :receive_data do
     it "processes frame data" do
       @client.receive_data("ERROR\nmessage:failed\n\n\000").should be true
-      @user.called.should == [:on_error]
-      @user.frame.command.should == "ERROR"
-      @user.error.should == "failed"
+      @client.called.should == [:on_error]
+      @client.params[:frame].command.should == "ERROR"
+      @client.params[:error].should == "failed"
     end
 
     it "notifies heartbeat" do
@@ -63,22 +108,8 @@ describe StompOut::Client do
 
     it "reports error" do
       @client.receive_data("RECEIPT\n\n\000").should be true
-      @user.called.should == [:on_error]
-      @user.error.should == "Missing 'receipt-id' header"
-    end
-  end
-
-  context :send_data do
-    it "passes data to user" do
-      @client.send_data("ACK\nack:1\n\n\000").should be true
-      @user.called.should == [:send_data]
-      @user.data.should == "ACK\nack:1\n\n\000"
-    end
-
-    it "notifies heartbeat" do
-      @client.receive_data("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\000")
-      @client.send_data("ACK\nack:1\n\n\000").should be true
-      @client.heartbeat.instance_variable_get(:@sent_data).should be true
+      @client.called.should == [:on_error]
+      @client.params[:error].should == "Missing 'receipt-id' header"
     end
   end
 
@@ -86,15 +117,15 @@ describe StompOut::Client do
     [StompOut::ProtocolError, StompOut::ApplicationError].each do |error|
       it "reports error message for #{error.class}" do
         @client.report_error(error.new("failed"))
-        @user.called.should == [:on_error]
-        @user.error.should == "failed"
+        @client.called.should == [:on_error]
+        @client.params[:error].should == "failed"
       end
     end
 
     it "reports error message for ApplicationError" do
       @client.report_error(StompOut::ApplicationError.new("failed"))
-      @user.called.should == [:on_error]
-      @user.error.should == "failed"
+      @client.called.should == [:on_error]
+      @client.params[:error].should == "failed"
     end
 
     it "reports error class, message, and backtrace for unexpected exceptions" do
@@ -102,16 +133,16 @@ describe StompOut::Client do
         nil + 1
       rescue StandardError => error
         @client.report_error(error)
-        @user.called.should == [:on_error]
-        @user.error.should == "NoMethodError: undefined method `+' for nil:NilClass"
-        @user.details.should =~ /client_spec.rb/
+        @client.called.should == [:on_error]
+        @client.params[:error].should == "NoMethodError: undefined method `+' for nil:NilClass"
+        @client.params[:details].should =~ /client_spec.rb/
       end
     end
 
     it "reports error string for any other types of errors" do
       @client.report_error("failed")
-      @user.called.should == [:on_error]
-      @user.error.should == "failed"
+      @client.called.should == [:on_error]
+      @client.params[:error].should == "failed"
     end
   end
 
@@ -120,26 +151,26 @@ describe StompOut::Client do
     context :connect do
       it "sends CONNECT frame to server" do
         @client.connect.should be true
-        @user.called.should == [:send_data]
-        @user.data.should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\n\n\000\n"
       end
 
       it "includes application specific headers" do
         @client.connect(nil, nil, nil, {"other" => "header"}).should be true
-        @user.called.should == [:send_data]
-        @user.data.should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\nother:header\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\nother:header\n\n\000\n"
       end
 
       it "configures heartbeat if specified" do
         @client.connect(10000).should be true
-        @user.called.should == [:send_data]
-        @user.data.should == "CONNECT\naccept-version:1.0,1.1,1.2\nheart-beat:5000,10000\nhost:stomp\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "CONNECT\naccept-version:1.0,1.1,1.2\nheart-beat:5000,10000\nhost:stomp\n\n\000\n"
       end
 
       it "adds authentication headers if specified" do
         @client.connect(nil, "me", "secret").should be true
-        @user.called.should == [:send_data]
-        @user.data.should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\nlogin:me\npasscode:secret\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "CONNECT\naccept-version:1.0,1.1,1.2\nhost:stomp\nlogin:me\npasscode:secret\n\n\000\n"
       end
 
       it "raises ProtocolError if already connected" do
@@ -167,40 +198,39 @@ describe StompOut::Client do
 
             it "sends SEND frame to server" do
               @client.message("/queue", "hello").should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SEND\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue\n\nhello\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SEND\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue\n\nhello\000\n"
             end
 
             it "includes application specific headers" do
               @client.message("/queue", "hello", nil, nil, nil, {"other" => "header"}).should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SEND\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue\nother:header\n\nhello\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SEND\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue\nother:header\n\nhello\000\n"
             end
 
             it "uses specified content-type" do
               @client.message("/queue", "{\"some\":\"data\"}", "application/json").should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SEND\ncontent-length:15\ncontent-type:application/json\ndestination:/queue\n\n{\"some\":\"data\"}\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SEND\ncontent-length:15\ncontent-type:application/json\ndestination:/queue\n\n{\"some\":\"data\"}\000\n"
             end
 
             it "JSON-encodes body if content-type is application/json and :auto_json enabled" do
-              @user = StompOut::ClientUser.new
-              @client = StompOut::Client.new(@user, @options.merge(:auto_json => true))
+              @client = ClientMock.new(@options.merge(:auto_json => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.message("/queue", {:some => "data"}, "application/json").should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SEND\ncontent-length:15\ncontent-type:application/json\ndestination:/queue\n\n{\"some\":\"data\"}\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SEND\ncontent-length:15\ncontent-type:application/json\ndestination:/queue\n\n{\"some\":\"data\"}\000\n"
             end
 
             it "adds request to transaction if transaction ID specified" do
               transaction_id, _ = @client.begin
               @client.message("/queue", nil, nil, nil, transaction_id).should be nil
-              @user.called.should == [:on_connected, :send_data, :send_data]
-              @user.data.should == "SEND\ndestination:/queue\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data, :send_data]
+              @client.params[:data].should == "SEND\ndestination:/queue\ntransaction:1\n\n\000\n"
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.message("/queue", "hello").should == "1"
             end
@@ -225,29 +255,29 @@ describe StompOut::Client do
 
             it "sends SUBSCRIBE frame to server" do
               @client.subscribe("/queue")
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SUBSCRIBE\ndestination:/queue\nid:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SUBSCRIBE\ndestination:/queue\nid:1\n\n\000\n"
             end
 
             it "includes application specific headers" do
               @client.subscribe("/queue", nil, nil, {"other" => "header"}).should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "SUBSCRIBE\ndestination:/queue\nid:1\nother:header\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "SUBSCRIBE\ndestination:/queue\nid:1\nother:header\n\n\000\n"
             end
 
             it "creates subscription ID and adds subscription to list" do
-              @client.instance_variable_get(:@subscriptions).should == {}
+              @client.instance_variable_get(:@subscribes).should == {}
               @client.subscribe("/queue")
-              @client.instance_variable_get(:@subscriptions).should == {"/queue" => {:ack => nil, :id => "1"}}
+              @client.instance_variable_get(:@subscribes).should == {"/queue" => {:ack => nil, :id => "1"}}
             end
 
             it "uses given ack setting" do
               @client.subscribe("/queue", "client")
-              @user.data.should == "SUBSCRIBE\nack:client\ndestination:/queue\nid:1\n\n\000\n"
+              @client.params[:data].should == "SUBSCRIBE\nack:client\ndestination:/queue\nid:1\n\n\000\n"
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.subscribe("/queue").should == "1"
             end
@@ -287,42 +317,42 @@ describe StompOut::Client do
               it "sends UNSUBSCRIBE frame to server" do
                 @client.subscribe("/queue")
                 @client.unsubscribe("/queue")
-                @user.called.should == [:on_connected, :send_data, :send_data]
-                @user.data.should == "UNSUBSCRIBE\ndestination:/queue\nid:1\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :send_data]
+                @client.params[:data].should == "UNSUBSCRIBE\ndestination:/queue\nid:1\n\n\000\n"
               end
 
               it "includes application specific headers" do
                 @client.subscribe("/queue")
                 @client.unsubscribe("/queue", nil, {"other" => "header"})
-                @user.called.should == [:on_connected, :send_data, :send_data]
-                @user.data.should == "UNSUBSCRIBE\ndestination:/queue\nid:1\nother:header\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :send_data]
+                @client.params[:data].should == "UNSUBSCRIBE\ndestination:/queue\nid:1\nother:header\n\n\000\n"
               end
             else
               it "sends UNSUBSCRIBE frame to server" do
                 @client.subscribe("/queue")
                 @client.unsubscribe("/queue")
-                @user.called.should == [:on_connected, :send_data, :send_data]
-                @user.data.should == "UNSUBSCRIBE\nid:1\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :send_data]
+                @client.params[:data].should == "UNSUBSCRIBE\nid:1\n\n\000\n"
               end
 
               it "includes application specific headers" do
                 @client.subscribe("/queue")
                 @client.unsubscribe("/queue", nil, {"other" => "header"})
-                @user.called.should == [:on_connected, :send_data, :send_data]
-                @user.data.should == "UNSUBSCRIBE\nid:1\nother:header\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :send_data]
+                @client.params[:data].should == "UNSUBSCRIBE\nid:1\nother:header\n\n\000\n"
               end
             end
 
             it "deletes the given subscription from list" do
-              @client.instance_variable_get(:@subscriptions).should == {}
+              @client.instance_variable_get(:@subscribes).should == {}
               @client.subscribe("/queue")
-              @client.instance_variable_get(:@subscriptions).should == {"/queue" => {:ack => nil, :id => "1"}}
+              @client.instance_variable_get(:@subscribes).should == {"/queue" => {:ack => nil, :id => "1"}}
               @client.unsubscribe("/queue")
-              @client.instance_variable_get(:@subscriptions).should == {}
+              @client.instance_variable_get(:@subscribes).should == {}
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.subscribe("/queue").should == "1"
               @client.unsubscribe("/queue").should == "2"
@@ -361,25 +391,25 @@ describe StompOut::Client do
 
               it "sends ACK frame to server" do
                 @client.ack("9").should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "ACK\nmessage-id:123\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "ACK\nmessage-id:123\n\n\000\n"
               end
 
               it "includes application specific headers" do
                 @client.ack("9", nil, nil, {"other" => "header"}).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "ACK\nmessage-id:123\nother:header\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "ACK\nmessage-id:123\nother:header\n\n\000\n"
               end
 
               it "adds request to transaction if transaction ID specified" do
                 transaction_id, _ = @client.begin
                 @client.ack("9", nil, transaction_id).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
-                @user.data.should == "ACK\nmessage-id:123\ntransaction:1\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
+                @client.params[:data].should == "ACK\nmessage-id:123\ntransaction:1\n\n\000\n"
               end
 
               it "returns receipt-id if enabled globally" do
-                @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+                @client = ClientMock.new(@options.merge(:receipt => true))
                 @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
                 @client.subscribe("/queue").should == "1"
                 @client.receive_data("MESSAGE\nack:9\ndestination:/queue\nmessage-id:123\n\nhello\000\n")
@@ -402,25 +432,25 @@ describe StompOut::Client do
 
               it "sends ACK frame to server" do
                 @client.ack("9").should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "ACK\nid:9\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "ACK\nid:9\n\n\000\n"
               end
 
               it "includes application specific headers" do
                 @client.ack("9", nil, nil, {"other" => "header"}).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "ACK\nid:9\nother:header\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "ACK\nid:9\nother:header\n\n\000\n"
               end
 
               it "adds request to transaction if transaction ID specified" do
                 transaction_id, _ = @client.begin
                 @client.ack("9", nil, transaction_id).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
-                @user.data.should == "ACK\nid:9\ntransaction:1\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
+                @client.params[:data].should == "ACK\nid:9\ntransaction:1\n\n\000\n"
               end
 
               it "returns receipt-id if enabled globally" do
-                @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+                @client = ClientMock.new(@options.merge(:receipt => true))
                 @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
                 @client.subscribe("/queue").should == "1"
                 @client.receive_data("MESSAGE\nack:9\ndestination:/queue\nmessage-id:123\nsubscription:1\n\nhello\000\n")
@@ -463,21 +493,21 @@ describe StompOut::Client do
             else
               it "sends NACK frame to server" do
                 @client.nack("9").should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "NACK\nid:9\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "NACK\nid:9\n\n\000\n"
               end
 
               it "includes application specific headers" do
                 @client.nack("9", nil, nil, {"other" => "header"}).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data]
-                @user.data.should == "NACK\nid:9\nother:header\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data]
+                @client.params[:data].should == "NACK\nid:9\nother:header\n\n\000\n"
               end
 
               it "adds request to transaction if transaction ID specified" do
                 transaction_id, _ = @client.begin
                 @client.nack("9", nil, transaction_id).should be nil
-                @user.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
-                @user.data.should == "NACK\nid:9\ntransaction:1\n\n\000\n"
+                @client.called.should == [:on_connected, :send_data, :on_message, :send_data, :send_data]
+                @client.params[:data].should == "NACK\nid:9\ntransaction:1\n\n\000\n"
               end
 
               it "deletes the associated message ID from list" do
@@ -487,7 +517,7 @@ describe StompOut::Client do
               end
 
               it "returns receipt-id if enabled globally" do
-                @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+                @client = ClientMock.new(@options.merge(:receipt => true))
                 @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
                 @client.subscribe("/queue").should == "1"
                 @client.receive_data("MESSAGE\nack:9\ndestination:/queue\nmessage-id:123\nsubscription:1\n\nhello\000\n")
@@ -515,14 +545,14 @@ describe StompOut::Client do
 
             it "sends BEGIN frame to server" do
               @client.begin.should == ["1", nil]
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "BEGIN\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "BEGIN\ntransaction:1\n\n\000\n"
             end
 
             it "includes application specific headers" do
               @client.begin(nil, {"other" => "header"}).should == ["1", nil]
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "BEGIN\nother:header\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "BEGIN\nother:header\ntransaction:1\n\n\000\n"
             end
 
             it "creates transaction ID and stores it in list" do
@@ -531,7 +561,7 @@ describe StompOut::Client do
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.begin.should == ["1", "1"]
             end
@@ -557,18 +587,18 @@ describe StompOut::Client do
 
             it "sends COMMIT frame to server" do
               @client.commit("1").should be nil
-              @user.called.should == [:on_connected, :send_data, :send_data]
-              @user.data.should == "COMMIT\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data, :send_data]
+              @client.params[:data].should == "COMMIT\ntransaction:1\n\n\000\n"
             end
 
             it "includes application specific headers" do
               @client.commit("1", nil, {"other" => "header"}).should be nil
-              @user.called.should == [:on_connected, :send_data, :send_data]
-              @user.data.should == "COMMIT\nother:header\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data, :send_data]
+              @client.params[:data].should == "COMMIT\nother:header\ntransaction:1\n\n\000\n"
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.begin.should == ["1", "1"]
               @client.commit("1").should == "2"
@@ -601,18 +631,18 @@ describe StompOut::Client do
 
             it "sends ABORT frame to server" do
               @client.abort("1").should be nil
-              @user.called.should == [:on_connected, :send_data, :send_data]
-              @user.data.should == "ABORT\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data, :send_data]
+              @client.params[:data].should == "ABORT\ntransaction:1\n\n\000\n"
             end
 
             it "includes application specific headers" do
               @client.abort("1", nil, {"other" => "header"}).should be nil
-              @user.called.should == [:on_connected, :send_data, :send_data]
-              @user.data.should == "ABORT\nother:header\ntransaction:1\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data, :send_data]
+              @client.params[:data].should == "ABORT\nother:header\ntransaction:1\n\n\000\n"
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nversion:#{version}\n\n\000")
               @client.begin.should == ["1", "1"]
               @client.abort("1").should == "2"
@@ -644,15 +674,15 @@ describe StompOut::Client do
 
             it "sends DISCONNECT frame to server" do
               @client.disconnect.should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "DISCONNECT\n\n\000\n"
-              @client.connected.should be false
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "DISCONNECT\n\n\000\n"
+              @client.connected?.should be false
             end
 
             it "includes application specific headers" do
               @client.disconnect(nil, {"other" => "header"}).should be nil
-              @user.called.should == [:on_connected, :send_data]
-              @user.data.should == "DISCONNECT\nother:header\n\n\000\n"
+              @client.called.should == [:on_connected, :send_data]
+              @client.params[:data].should == "DISCONNECT\nother:header\n\n\000\n"
             end
 
             it "stops heartbeat" do
@@ -661,7 +691,7 @@ describe StompOut::Client do
             end
 
             it "returns receipt-id if enabled globally" do
-              @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+              @client = ClientMock.new(@options.merge(:receipt => true))
               @client.receive_data("CONNECTED\nheart-beat:0,0\nversion:#{version}\n\n\000")
               @client.disconnect.should == "1"
             end
@@ -688,18 +718,18 @@ describe StompOut::Client do
         context :receive_connected do
           it "notifies user that connected" do
             @client.receive_data("CONNECTED\nserver:RabbitMQ/3.4.1\nsession:1\nversion:#{version}\n\n\000")
-            @user.called.should == [:on_connected]
-            @user.frame.command.should == "CONNECTED"
-            @user.server_name.should == "RabbitMQ/3.4.1"
-            @user.session_id.should == "1"
+            @client.called.should == [:on_connected]
+            @client.params[:frame].command.should == "CONNECTED"
+            @client.params[:server_name].should == "RabbitMQ/3.4.1"
+            @client.params[:session_id].should == "1"
           end
 
           it "stores information about the session" do
             @client.receive_data("CONNECTED\nserver:RabbitMQ/3.4.1\nsession:1\nversion:#{version}\n\n\000")
-            @client.server_name.should == "RabbitMQ/3.4.1"
-            @client.session_id.should == "1"
+            @client.params[:server_name].should == "RabbitMQ/3.4.1"
+            @client.params[:session_id].should == "1"
             @client.version.should == version
-            @client.connected.should be true
+            @client.connected?.should be true
           end
 
           it "starts heartbeat if specified" do
@@ -724,56 +754,56 @@ describe StompOut::Client do
           it "notifies user of the message" do
             @client.subscribe("/queue")
             @client.receive_data("MESSAGE\nack:1\ndestination:/queue\nmessage-id:123\nsubscription:1\n\nhello\000")
-            @user.called.should == [:on_connected, :send_data, :on_message]
-            @user.frame.command.should == "MESSAGE"
-            @user.destination.should == "/queue"
-            @user.message.should == "hello"
-            @user.message_id.should == "123"
-            @user.ack_id.should == "1"
+            @client.called.should == [:on_connected, :send_data, :on_message]
+            @client.params[:frame].command.should == "MESSAGE"
+            @client.params[:destination].should == "/queue"
+            @client.params[:message].should == "hello"
+            @client.params[:message_id].should == "123"
+            @client.params[:ack_id].should == "1"
           end
 
           it "raises ProtocolError if destination header is missing" do
             @client.receive_data("MESSAGE\n\n\000")
-            @user.called.should == [:on_connected, :on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "Missing 'destination' header"
+            @client.called.should == [:on_connected, :on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "Missing 'destination' header"
           end
 
           it "raises ProtocolError if message-id header is missing" do
             @client.receive_data("MESSAGE\ndestination:/queue\n\n\000")
-            @user.called.should == [:on_connected, :on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "Missing 'message-id' header"
+            @client.called.should == [:on_connected, :on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "Missing 'message-id' header"
           end
 
           if version == "1.0"
             it "does not raise ProtocolError if subscription header is missing" do
               @client.subscribe("/queue")
               @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\n\n\000")
-              @user.called.should == [:on_connected, :send_data, :on_message]
+              @client.called.should == [:on_connected, :send_data, :on_message]
             end
           else
             it "raises ProtocolError if subscription header is missing" do
               @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\n\n\000")
-              @user.called.should == [:on_connected, :on_error]
-              @user.frame.command.should == "ERROR"
-              @user.error.should == "Missing 'subscription' header"
+              @client.called.should == [:on_connected, :on_error]
+              @client.params[:frame].command.should == "ERROR"
+              @client.params[:error].should == "Missing 'subscription' header"
             end
 
             it "raises ApplicationError if subscription does not match destination" do
               @client.subscribe("/queue")
               @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\nsubscription:2\n\n\000")
-              @user.called.should == [:on_connected, :send_data, :on_error]
-              @user.frame.command.should == "ERROR"
-              @user.error.should == "Subscription does not match destination '/queue'"
+              @client.called.should == [:on_connected, :send_data, :on_error]
+              @client.params[:frame].command.should == "ERROR"
+              @client.params[:error].should == "Subscription does not match destination '/queue'"
             end
           end
 
           it "raise ApplicationError if subscription not found" do
             @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\nsubscription:1\n\n\000")
-            @user.called.should == [:on_connected, :on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "Subscription to '/queue' not found"
+            @client.called.should == [:on_connected, :on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "Subscription to '/queue' not found"
           end
 
           ["client", "client-individual"].each do |ack|
@@ -787,7 +817,7 @@ describe StompOut::Client do
                   @client.instance_variable_get(:@ack_id).should == 0
                   @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\n\n\000")
                   @client.instance_variable_get(:@ack_id).should == 1
-                  @user.ack_id.should == "1"
+                  @client.params[:ack_id].should == "1"
                 end
 
                 it "records message ID associated with given ack ID" do
@@ -799,16 +829,16 @@ describe StompOut::Client do
                 it "raises ApplicationError if there is more than one message associated with ack ID" do
                   @client.receive_data("MESSAGE\nack:3\ndestination:/queue\nmessage-id:123\n\n\000")
                   @client.receive_data("MESSAGE\nack:3\ndestination:/queue\nmessage-id:456\n\n\000")
-                  @user.called.should == [:on_connected, :send_data, :on_message, :on_error]
-                  @user.frame.command.should == "ERROR"
-                  @user.error.should == "Duplicate ack 3 for messages 123 and 456"
+                  @client.called.should == [:on_connected, :send_data, :on_message, :on_error]
+                  @client.params[:frame].command.should == "ERROR"
+                  @client.params[:error].should == "Duplicate ack 3 for messages 123 and 456"
                 end
               elsif version == "1.1"
                 it "creates ack ID" do
                   @client.instance_variable_get(:@ack_id).should == 0
                   @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\nsubscription:1\n\n\000")
                   @client.instance_variable_get(:@ack_id).should == 1
-                  @user.ack_id.should == "1"
+                  @client.params[:ack_id].should == "1"
                 end
 
                 it "records message ID associated with given ack ID" do
@@ -819,17 +849,17 @@ describe StompOut::Client do
               elsif version > "1.1"
                 it "raises ProtocolError if ack header is missing" do
                   @client.receive_data("MESSAGE\ndestination:/queue\nmessage-id:123\nsubscription:1\n\n\000")
-                  @user.called.should == [:on_connected, :send_data, :on_error]
-                  @user.frame.command.should == "ERROR"
-                  @user.error.should == "Missing 'ack' header"
+                  @client.called.should == [:on_connected, :send_data, :on_error]
+                  @client.params[:frame].command.should == "ERROR"
+                  @client.params[:error].should == "Missing 'ack' header"
                 end
 
                 it "raises ApplicationError if there is more than one message associated with ack ID" do
                   @client.receive_data("MESSAGE\nack:3\ndestination:/queue\nmessage-id:123\nsubscription:1\n\n\000")
                   @client.receive_data("MESSAGE\nack:3\ndestination:/queue\nmessage-id:456\nsubscription:1\n\n\000")
-                  @user.called.should == [:on_connected, :send_data, :on_message, :on_error]
-                  @user.frame.command.should == "ERROR"
-                  @user.error.should == "Duplicate ack 3 for messages 123 and 456"
+                  @client.called.should == [:on_connected, :send_data, :on_message, :on_error]
+                  @client.params[:frame].command.should == "ERROR"
+                  @client.params[:error].should == "Duplicate ack 3 for messages 123 and 456"
                 end
 
                 it "records message ID associated with given ack ID" do
@@ -850,9 +880,9 @@ describe StompOut::Client do
           it "notifies user of the receipt" do
             @client.message("/queue", "hello", nil, true).should == "1"
             @client.receive_data("RECEIPT\nreceipt-id:1\n\n\000")
-            @user.called.should == [:on_connected, :send_data, :on_receipt]
-            @user.frame.command.should == "RECEIPT"
-            @user.receipt_id.should == "1"
+            @client.called.should == [:on_connected, :send_data, :on_receipt]
+            @client.params[:frame].command.should == "RECEIPT"
+            @client.params[:receipt_id].should == "1"
           end
 
           it "deletes receipted frame" do
@@ -865,36 +895,36 @@ describe StompOut::Client do
 
           it "raises ProtocolError if receipt-id header is missing" do
             @client.receive_data("RECEIPT\n\n\000")
-            @user.called.should == [:on_connected, :on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "Missing 'receipt-id' header"
+            @client.called.should == [:on_connected, :on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "Missing 'receipt-id' header"
           end
 
           it "raises ApplicationError if request matching receipt not found" do
             @client.receive_data("RECEIPT\nreceipt-id:1\n\n\000")
-            @user.called.should == [:on_connected, :on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "Request not found matching receipt 1"
+            @client.called.should == [:on_connected, :on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "Request not found matching receipt 1"
           end
         end
 
         context :receive_error do
           it "notifies user of error" do
             @client.receive_data("ERROR\nmessage:failed\n\nmore info\000")
-            @user.called.should == [:on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "failed"
-            @user.details.should == "more info"
-            @user.receipt_id.should be nil
+            @client.called.should == [:on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "failed"
+            @client.params[:details].should == "more info"
+            @client.params[:receipt_id].should be nil
           end
 
           it "includes receipt-id if there is one" do
             @client.receive_data("ERROR\nmessage:failed\nreceipt-id:3\n\nmore info\000")
-            @user.called.should == [:on_error]
-            @user.frame.command.should == "ERROR"
-            @user.error.should == "failed"
-            @user.details.should == "more info"
-            @user.receipt_id.should == "3"
+            @client.called.should == [:on_error]
+            @client.params[:frame].command.should == "ERROR"
+            @client.params[:error].should == "failed"
+            @client.params[:details].should == "more info"
+            @client.params[:receipt_id].should == "3"
           end
         end
       end
@@ -907,7 +937,7 @@ describe StompOut::Client do
       it "sends frame to receive function for processing" do
         frame = StompOut::Frame.new("CONNECTED", {"version" => "1.2"})
         @client.send(:process_frame, frame).should be true
-        @user.called.should == [:on_connected]
+        @client.called.should == [:on_connected]
       end
 
       it "does not decode body by default" do
@@ -917,22 +947,22 @@ describe StompOut::Client do
         body = JSON.dump({:some => "data"})
         frame = StompOut::Frame.new("MESSAGE", headers, body)
         @client.send(:process_frame, frame).should be true
-        @user.called.should == [:on_connected, :send_data, :on_message]
-        @user.frame.body.should == body
-        @user.message.should == body
+        @client.called.should == [:on_connected, :send_data, :on_message]
+        @client.params[:frame].body.should == body
+        @client.params[:message].should == body
       end
 
       it "decodes body for content-type application/json if :auto_json enabled" do
-        @client = StompOut::Client.new(@user, @options.merge(:auto_json => true))
+        @client = ClientMock.new(@options.merge(:auto_json => true))
         @client.receive_data("CONNECTED\nversion:1.2\n\n\000")
         @client.subscribe("/queue")
         headers = {"ack" => "1", "destination" => "/queue", "message-id" => 123, "subscription" => "1", "content-type" => "application/json"}
         body = JSON.dump({:some => "data"})
         frame = StompOut::Frame.new("MESSAGE", headers, body)
         @client.send(:process_frame, frame).should be true
-        @user.called.should == [:on_connected, :send_data, :on_message]
-        @user.frame.body.should == body
-        @user.message.should == {"some" => "data"}
+        @client.called.should == [:on_connected, :send_data, :on_message]
+        @client.params[:frame].body.should == body
+        @client.params[:message].should == {"some" => "data"}
       end
 
       it "raises ProtocolError if it is not a recognized command" do
@@ -945,8 +975,8 @@ describe StompOut::Client do
     context :send_frame do
       it "sends frame to server" do
         @client.send(:send_frame, "SEND")
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\n\n\000\n"
       end
 
       it "return frame" do
@@ -958,40 +988,46 @@ describe StompOut::Client do
 
       it "adds specified headers to frame" do
         @client.send(:send_frame, "SEND", {"destination" => "/queue"})
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ndestination:/queue\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ndestination:/queue\n\n\000\n"
       end
 
       it "adds receipt header if receipt enabled globally" do
-        @client = StompOut::Client.new(@user, @options.merge(:receipt => true))
+        @client = ClientMock.new(@options.merge(:receipt => true))
         @client.send(:send_frame, "SEND", {"destination" => "/queue"})
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ndestination:/queue\nreceipt:1\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ndestination:/queue\nreceipt:1\n\n\000\n"
       end
 
       it "adds receipt header if receipt enabled locally" do
         @client.send(:send_frame, "SEND", {"destination" => "/queue"}, nil, nil, true)
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ndestination:/queue\nreceipt:1\n\n\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ndestination:/queue\nreceipt:1\n\n\000\n"
       end
 
       it "uses specified content-type but calculates content-length" do
         @client.send(:send_frame, "SEND", {"content-type" => "application/json"}, "{\"some\":\"data\"}")
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ncontent-length:15\ncontent-type:text/plain\n\n{\"some\":\"data\"}\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ncontent-length:15\ncontent-type:text/plain\n\n{\"some\":\"data\"}\000\n"
       end
 
       it "sets content-type and content-length headers if there is a body" do
         @client.send(:send_frame, "SEND", nil, "hello")
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ncontent-length:5\ncontent-type:text/plain\n\nhello\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ncontent-length:5\ncontent-type:text/plain\n\nhello\000\n"
       end
 
       it "JSON-encodes body for content-type application/json if :auto_json enabled" do
-        @client = StompOut::Client.new(@user, @options.merge(:auto_json => true))
+        @client = ClientMock.new(@options.merge(:auto_json => true))
         @client.send(:send_frame, "SEND", nil, {:some => "data"}, "application/json")
-        @user.called.should == [:send_data]
-        @user.data.should == "SEND\ncontent-length:15\ncontent-type:application/json\n\n{\"some\":\"data\"}\000\n"
+        @client.called.should == [:send_data]
+        @client.params[:data].should == "SEND\ncontent-length:15\ncontent-type:application/json\n\n{\"some\":\"data\"}\000\n"
+      end
+
+      it "notifies heartbeat" do
+        @client.receive_data("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\000")
+        @client.send(:send_frame, "SEND")
+        @client.heartbeat.instance_variable_get(:@sent_data).should be true
       end
 
       context "when transaction" do
@@ -999,8 +1035,8 @@ describe StompOut::Client do
           @client.receive_data("CONNECTED\nversion:1.2\n\n\000")
           transaction_id, _ = @client.begin
           @client.send(:send_frame, "SEND", nil, nil, nil, nil, transaction_id)
-          @user.called.should == [:on_connected, :send_data, :send_data]
-          @user.data.should == "SEND\ntransaction:1\n\n\000\n"
+          @client.called.should == [:on_connected, :send_data, :send_data]
+          @client.params[:data].should == "SEND\ntransaction:1\n\n\000\n"
         end
 
         it "raises ApplicationError if transaction not found" do
