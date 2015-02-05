@@ -1,4 +1,3 @@
-
 # Example of a StompOut::Server subclass in a WebSocket environment
 class WebSocketServer < StompOut::Server
 
@@ -71,41 +70,32 @@ end
 class WebSocketServerApp < Rack::WebSocket::Application
 
   @@servers = {}
-  @@connections = {}
-  @@connection_id = 0
+  @@server_id = 0
   @@messages = Hash.new { |h, k| h[k] = [] }
   @@message_id = 0
 
   def on_open(env)
-    socket = env["async.connection"]
-    @@connections[socket] = @@connection_id += 1
-    puts "opened connection #{@@connection_id}"
-    @@servers[socket] = WebSocketServer.new(:parent => self)
+    @server_id = (@@server_id += 1)
+    puts "opened #{@server_id}"
+    @@servers[@server_id] = WebSocketServer.new(:parent => self)
   end
 
   def on_close(env)
-    socket = env["async.connection"]
-    connection = @@connections.delete(socket)
-    puts "closed connection #{connection}"
-    @@servers.delete(socket)
+    puts "closed #{@server_id}"
+    @@servers.delete(@server_id)
   end
 
   def on_error(env, error)
-    socket = env["async.connection"]
-    connection = @@connections[socket]
-    STDERR.puts "error on connection #{connection} (#{error})"
+    STDERR.puts "error on connection #{@server_id} (#{error})"
   end
 
   def on_message(env, message)
-    socket = env["async.connection"]
-    connection = @@connections[socket]
-    puts "received #{message} on connection #{connection}"
-    @@servers[socket].receive_data(JSON.load(message))
+    puts "STOMP <#{@server_id} #{message.inspect}"
+    @@servers[@server_id].receive_data(message)
   end
 
   def send_data(data)
-    data = JSON.dump(data)
-    puts "sending #{data}"
+    puts "STOMP >#{@server_id} #{data.inspect}"
     super(data)
   end
 

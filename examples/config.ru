@@ -6,7 +6,7 @@ require 'rack/server'
 require 'eventmachine'
 require 'rack/websocket'
 require 'stomp_out'
-require 'websocket_server'
+require './websocket_server'
 
 map '/' do
   run WebSocketServerApp.new

@@ -1,6 +1,7 @@
 .idea/*
 pkg/*
 .bundle/*
+.ruby-version
 measurement/*
 *.swp
 Gemfile.lock

@@ -28,20 +28,20 @@ class WebSocketClient < StompOut::Client
   end
 
   def on_connected(frame, session_id, server_name)
-    puts "connected to #{server_name} for session #{session_id}"
+    puts "connected to #{server_name.inspect} for session #{session_id.inspect}"
     if @message
       receipt_id = message(@destination, @message)
-      @receipts[receipt_id] = "message to #{@destination}" if receipt_id
+      @receipts[receipt_id] = "message to #{@destination.inspect}" if receipt_id
       close
     else
-      puts "subscribing to #{@destination} with ack #{@ack}"
+      puts "subscribe #{@destination.inspect} with ack #{@ack.inspect}"
       receipt_id = subscribe(@destination, @ack, receipt = true)
-      @receipts[receipt_id] = "subscribe to #{@destination} with ack #{@ack}" if receipt_id
+      @receipts[receipt_id] = "subscribe #{@destination.inspect} with ack #{@ack.inspect}" if receipt_id
     end
   end
 
   def on_message(frame, destination, message, content_type, message_id, ack_id)
-    puts "received #{content_type} message #{message_id} from #{destination} " +
+    puts "message #{message_id.inspect} of type #{content_type.inspect} from #{destination.inspect} " +
          "with ack #{ack_id.inspect}: #{message.inspect}"
     if @ack != "auto"
       receipt_id = ack(ack_id)
@@ -51,7 +51,7 @@ class WebSocketClient < StompOut::Client
 
   def on_receipt(frame, receipt_id)
     @subscribed = true if @receipts[receipt_id].to_s =~ /subscribe to/
-    puts "received receipt #{receipt_id} for #{@receipts.delete(receipt_id).inspect}"
+    puts "receipt #{receipt_id.inspect} for #{@receipts.delete(receipt_id).inspect}"
   end
 
   def on_error(frame, error, details, receipt_id)
@@ -64,9 +64,9 @@ class WebSocketClient < StompOut::Client
     if connected?
       if @subscribed
         @subscribed = false
-        puts "unsubscribing from #{@destination}"
+        puts "unsubscribe #{@destination.inspect}"
         receipt_id = unsubscribe(@destination)
-        @receipts[receipt_id] = "unsubscribe from #{@destination}" if receipt_id
+        @receipts[receipt_id] = "unsubscribe #{@destination.inspect}" if receipt_id
       end
       receipt_id = disconnect
       @receipts[receipt_id] = "disconnect" if receipt_id
@@ -86,22 +86,21 @@ class WebSocketClientApp
 
   def start(options)
     ['INT', 'TERM'].each do |signal|
-      trap(signal) do stop end
+      trap(signal) do EM.stop if EM.reactor_running? end
     end
 
     EM.run do
       @client = WebSocketClient.new(options.merge(:parent => self, :name => self.class.name, :auto_json => true))
       @websocket = Faye::WebSocket::Client.new(options[:url])
-      @websocket.onerror = lambda { |e| puts "error #{e.message}"; stop }
-      @websocket.onclose = lambda { |e| puts "close #{e.code} #{e.reason}"; stop }
-      @websocket.onmessage = lambda { |e| puts "received #{e.data}"; @client.receive_data(JSON.load(e.data)) }
+      @websocket.onerror = lambda { |e| puts "error #{e.message.inspect}"; stop }
+      @websocket.onclose = lambda { |c| puts "close #{c.code} #{c.reason}"; stop }
+      @websocket.onmessage = lambda { |m| puts "STOMP < #{m.data.inspect}"; @client.receive_data(m.data) }
       @client.connect
     end
   end
 
   def send_data(data)
-    data = JSON.dump(data)
-    puts "sending: #{data}"
+    puts "STOMP > #{data.inspect}"
     @websocket.send(data)
   end
 
