@@ -1,3 +1,5 @@
+{<img src="https://travis-ci.org/rightscale/stomp_out.svg?branch=master" alt="Build Status" />}[https://travis-ci.org/rightscale/stomp_out]
+
 = Introduction
 
 StompOut is an implementation of the Simple Text Orientated Messaging Protocol (STOMP[http://stomp.github.io]).
