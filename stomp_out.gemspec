@@ -11,7 +11,7 @@ Gem::Specification.new do |s|
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.require_paths = ["lib"]
   s.authors = ["Lee Kirchhoff"]
-  s.date = "2015-02-05"
+  s.date = "2015-02-06"
   s.description = "This implementation of STOMP is aimed at environments where a network connection, such as a WebSocket or TCP socket, is created and then raw data from that connection is passed to/from the STOMP client or server messaging layer provided by this gem."
   s.email = "support@rightscale.com"
   s.extra_rdoc_files = [
@@ -19,6 +19,7 @@ Gem::Specification.new do |s|
     "README.rdoc"
   ]
   s.files = [
+    ".rspec",
     ".travis.yml",
     "CHANGELOG.rdoc",
     "LICENSE",
@@ -49,24 +50,27 @@ Gem::Specification.new do |s|
       s.add_runtime_dependency(%q<json>, ["~> 1.4"])
       s.add_runtime_dependency(%q<simple_uuid>, ["~> 0.2"])
       s.add_development_dependency(%q<rake>, ["~> 10.0"])
-      s.add_development_dependency(%q<debugger>, ["~> 1.5"])
-      s.add_development_dependency(%q<jeweler>, ["~> 1.8.3"])
-      s.add_development_dependency(%q<ruby-debug>, ["~> 0.10"])
+      s.add_development_dependency(%q<jeweler>, ["~> 2.0"])
+      s.add_development_dependency(%q<ruby-debug>, [">= 0"])
+      s.add_development_dependency(%q<pry>, [">= 0"])
+      s.add_development_dependency(%q<pry-byebug>, [">= 0"])
     else
       s.add_dependency(%q<json>, ["~> 1.4"])
       s.add_dependency(%q<simple_uuid>, ["~> 0.2"])
       s.add_dependency(%q<rake>, ["~> 10.0"])
-      s.add_dependency(%q<debugger>, ["~> 1.5"])
-      s.add_dependency(%q<jeweler>, ["~> 1.8.3"])
-      s.add_dependency(%q<ruby-debug>, ["~> 0.10"])
+      s.add_dependency(%q<jeweler>, ["~> 2.0"])
+      s.add_dependency(%q<ruby-debug>, [">= 0"])
+      s.add_dependency(%q<pry>, [">= 0"])
+      s.add_dependency(%q<pry-byebug>, [">= 0"])
     end
   else
     s.add_dependency(%q<json>, ["~> 1.4"])
     s.add_dependency(%q<simple_uuid>, ["~> 0.2"])
     s.add_dependency(%q<rake>, ["~> 10.0"])
-    s.add_dependency(%q<debugger>, ["~> 1.5"])
-    s.add_dependency(%q<jeweler>, ["~> 1.8.3"])
-    s.add_dependency(%q<ruby-debug>, ["~> 0.10"])
+    s.add_dependency(%q<jeweler>, ["~> 2.0"])
+    s.add_dependency(%q<ruby-debug>, [">= 0"])
+    s.add_dependency(%q<pry>, [">= 0"])
+    s.add_dependency(%q<pry-byebug>, [">= 0"])
   end
 end
 

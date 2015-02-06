@@ -4,6 +4,7 @@ class WebSocketServer < StompOut::Server
   def initialize(options = {})
     options = options.dup
     @parent = options.delete(:parent)
+    @session_id = options.delete(:session)
     @subscriptions = {}
     @message_ids = {}
     super(options.merge(:name => self.class.name))
@@ -14,7 +15,7 @@ class WebSocketServer < StompOut::Server
   end
 
   def on_connect(frame, login, passcode, host, session_id)
-    true
+    @session_id
   end
 
   def on_message(frame, destination, message, content_type)
@@ -69,39 +70,39 @@ end
 # Simple WebSocket Rack application using WebSocketServer
 class WebSocketServerApp < Rack::WebSocket::Application
 
-  @@servers = {}
-  @@server_id = 0
+  @@sessions = {}
+  @@session_id = 0
   @@messages = Hash.new { |h, k| h[k] = [] }
   @@message_id = 0
 
   def on_open(env)
-    @server_id = (@@server_id += 1)
-    puts "opened #{@server_id}"
-    @@servers[@server_id] = WebSocketServer.new(:parent => self)
+    @session_id = (@@session_id += 1)
+    puts "opened #{@session_id}"
+    @@sessions[@session_id] = WebSocketServer.new(:parent => self, :session => @session_id)
   end
 
   def on_close(env)
-    puts "closed #{@server_id}"
-    @@servers.delete(@server_id)
+    puts "closed #{@session_id}"
+    @@sessions.delete(@session_id)
   end
 
   def on_error(env, error)
-    STDERR.puts "error on connection #{@server_id} (#{error})"
+    STDERR.puts "error on #{@session_id} (#{error})"
   end
 
   def on_message(env, message)
-    puts "STOMP <#{@server_id} #{message.inspect}"
-    @@servers[@server_id].receive_data(message)
+    puts "STOMP <#{@session_id} #{message.inspect}"
+    @@sessions[@session_id].receive_data(message)
   end
 
   def send_data(data)
-    puts "STOMP >#{@server_id} #{data.inspect}"
+    puts "STOMP >#{@session_id} #{data.inspect}"
     super(data)
   end
 
   def deliver_message(destination, message, content_type)
     @@messages[destination] << {:id => (@@message_id += 1).to_s, :message => message, :content_type => content_type}
-    @@servers.each_value { |s| s.deliver_messages(destination, @@messages[destination]) }
+    @@sessions.each_value { |s| s.deliver_messages(destination, @@messages[destination]) }
   end
 
   def delete_message(id)

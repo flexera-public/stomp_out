@@ -2,7 +2,7 @@
 require 'rubygems'
 require 'rake'
 require 'right_develop'
-require 'spec/rake/spectask'
+require 'rspec/core/rake_task'
 require 'rubygems/package_task'
 require 'rake/clean'
 
@@ -15,14 +15,12 @@ require 'rake/clean'
   end
 end
 
-task :default => [:spec]
+desc "Run unit tests"
+task :default => :spec
 
 desc "Run unit tests"
-Spec::Rake::SpecTask.new do |t|
-  t.spec_files = Dir['**/*_spec.rb']
-  t.spec_opts = lambda do
-    IO.readlines(File.join(File.dirname(__FILE__), 'spec', 'spec.opts')).map {|l| l.chomp.split " "}.flatten
-  end
+RSpec::Core::RakeTask.new do |t|
+  t.pattern = Dir['**/*_spec.rb']
 end
 
 if defined?(Jeweler)

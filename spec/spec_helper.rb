@@ -1,9 +1,10 @@
 require 'rubygems'
-$:.unshift(File.expand_path(File.join(File.dirname(__FILE__), '..', 'lib')))
 require 'bundler/setup'
-require 'spec'
+require 'rspec'
 require 'flexmock'
 require 'eventmachine'
+
+$:.unshift(File.expand_path(File.join(File.dirname(__FILE__), '..', 'lib')))
 require 'stomp_out'
 
 Spec::Runner.configure do |config|

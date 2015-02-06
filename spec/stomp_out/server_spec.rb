@@ -471,6 +471,22 @@ describe StompOut::Server do
             @server.params[:data].should =~ /CONNECTED.*\nserver:test\/1.0\n/
           end
 
+          it "uses on_connect returned value as session ID if it is a string" do
+            flexmock(@server).should_receive(:on_connect).and_return("22").once
+            @server.receive_data("CONNECT#{accept_version}\nhost:stomp\n\n\000\n")
+            @server.called.should == [:send_data]
+            @server.params[:session_id].should_not == "22"
+            @server.params[:data].should =~ /CONNECTED.*\nsession:22\n/
+          end
+
+          it "uses on_connect returned value as session ID if it is an integer" do
+            flexmock(@server).should_receive(:on_connect).and_return(22).once
+            @server.receive_data("CONNECT#{accept_version}\nhost:stomp\n\n\000\n")
+            @server.called.should == [:send_data]
+            @server.params[:session_id].should_not == "22"
+            @server.params[:data].should =~ /CONNECTED.*\nsession:22\n/
+          end
+
           it "reports connection to user and allows it to be rejected" do
             flexmock(@server).should_receive(:on_connect).with(StompOut::Frame, "test", "secret", "stomp", String).
                 and_return(false).once

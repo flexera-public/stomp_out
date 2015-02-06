@@ -144,9 +144,11 @@ module StompOut
     # @param [String] host to which client wishes to connect; this could be
     #   a virtual host or anything the application requires, or it may
     #   be arbitrary
-    # @param [String] session_id uniquely identifying the given STOMP session
+    # @param [String] session_id default for uniquely identifying the given STOMP session;
+    #   can be overridden with return value
     #
-    # @return [Boolean] true if connection accepted, otherwise false
+    # @return [Boolean, String] true or a server assigned session ID string if connection accepted,
+    #   otherwise false
     def on_connect(frame, login, passcode, host, session_id)
       raise "Not implemented"
     end
@@ -371,16 +373,18 @@ module StompOut
       # No need to pass frame to ProtocolError because connect does not permit "receipt" header
       raise ProtocolError.new("Receipt not permitted", frame) if frame.headers["receipt"]
       host = frame.require(@version, "host" => ["1.0"])
-      @session_id = SimpleUUID::UUID.new.to_guid
-      headers = {"version" => @version, "session" => @session_id}
+      headers = {"version" => @version}
       if (rate = frame.headers["heart-beat"])
         @heartbeat = Heartbeat.new(self, rate, @options[:min_send_interval] || MIN_SEND_HEARTBEAT,
                                    @options[:desired_receive_interval] || DESIRED_RECEIVE_HEARTBEAT)
         headers["heart-beat"] = [@heartbeat.outgoing_rate, @heartbeat.incoming_rate].join(",")
       end
       headers["server"] = @server_name if @server_name
-      if on_connect(frame, frame.headers["login"], frame.headers["passcode"], host, @session_id)
+      default_session_id = SimpleUUID::UUID.new.to_guid
+      if (result = on_connect(frame, frame.headers["login"], frame.headers["passcode"], host, default_session_id))
         @connected = true
+        @session_id = (result.is_a?(String) || result.is_a?(Integer)) ? result.to_s : default_session_id
+        headers["session"] = @session_id
         send_frame("CONNECTED", headers)
         @heartbeat.start if @heartbeat
       else
