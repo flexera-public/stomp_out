@@ -6,3 +6,8 @@ Initial commit
 
 Made gem testable under travis and added build status to README
 Enabled Server#on_connect to override the session_id it is passed
+
+=== 0.1.2 (2015-02-09)
+
+Generate session and message IDs incrementally rather than using UUID
+Handle acks IDs in 1.0/1.1 when message IDs not unique, e.g., on resend
