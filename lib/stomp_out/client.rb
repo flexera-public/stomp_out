@@ -46,7 +46,20 @@ module StompOut
 
     MIN_SEND_HEARTBEAT = 5000
 
-    attr_reader :version, :session_id, :server_name, :host, :heartbeat
+    # [String] version of STOMP chosen for session
+    attr_reader :version
+
+    # [String] session_id assigned to session
+    attr_reader :session_id
+
+    # [String] name assigned to server
+    attr_reader :server_name
+
+    # [String] host to which client is connecting
+    attr_reader :host
+
+    # [Heartbeat] heartbeat generator and monitor
+    attr_reader :heartbeat
 
     # Create STOMP client
     #

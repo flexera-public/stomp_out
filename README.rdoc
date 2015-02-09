@@ -80,7 +80,6 @@ and to consume messages:
 
 = Dependencies
 
-The simple_uuid gem is used by the Server for generating subscription identifiers.
 The eventmachine gem is used only if the STOMP heartbeat feature is used.
 The the json gem is used by the Client only if a content-type is "application/json"
 and the :auto_json option is enabled.

@@ -19,8 +19,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-require 'simple_uuid'
-
 module StompOut
 
   # Abstract base class for STOMP server for use with an existing client connection, such
@@ -57,7 +55,20 @@ module StompOut
     MIN_SEND_HEARTBEAT = 5000
     DESIRED_RECEIVE_HEARTBEAT = 60000
 
-    attr_reader :version, :session_id, :server_name, :heartbeat
+    # [Integer] value of last generated session ID for class
+    @@last_session_id = 0
+
+    # [String] version of STOMP chosen for session
+    attr_reader :version
+
+    # [String] session_id assigned to session
+    attr_reader :session_id
+
+    # [String] name assigned to server
+    attr_reader :server_name
+
+    # [Heartbeat] heartbeat generator and monitor
+    attr_reader :heartbeat
 
     # Create STOMP server
     #
@@ -71,6 +82,7 @@ module StompOut
       @options = options
       @ack_id = 0
       @ack_ids = {} # message-id is key
+      @message_id = 0
       @subscribe_id = 0
       @subscribes = {} # destination is key
       @server_name = options[:name] + (options[:version] ? "/#{options[:version]}" : "") if options[:name]
@@ -250,18 +262,19 @@ module StompOut
     # - may set other application-specific headers
     #
     # @param [Hash] headers for message per requirements above but with "message-id"
-    #   defaulting to generated UUID and "ack" defaulting to generated ID if not specified
+    #   defaulting to generated ID and "ack" defaulting to generated ID if not specified
     # @param [String] body of message
     #
     # @return [Array] message ID and ack ID; latter is nil if ack is in "auto" mode
     #
     # @raise [ProtocolError] not connected
-    # @raise [ApplicationError] subscription not found, subscription does not match destination
+    # @raise [ApplicationError] subscription not found, subscription does not match destination,
+    #   non-unique message ID
     def message(headers, body)
       raise ProtocolError.new("Not connected") unless @connected
       frame = Frame.new(nil, (headers && headers.dup) || {})
       destination, subscribe_id = frame.require(@version, "destination" => [], "subscription" => ["1.0"])
-      message_id = frame.headers["message-id"] ||= SimpleUUID::UUID.new.to_guid
+      message_id = frame.headers["message-id"] ||= (@message_id += 1).to_s
 
       ack_id = nil
       if (subscribe = @subscribes[destination])
@@ -273,6 +286,7 @@ module StompOut
           # on always receiving an ack ID (as opposed to a message ID) on ack/nack
           # independent of STOMP version in use
           ack_id = if @version < "1.2"
+            raise ApplicationError.new("Non-unique message-id; #{message_id}") if @ack_ids.has_key?(message_id)
             @ack_ids[message_id] = frame.headers.delete("ack") || (@ack_id += 1).to_s
           else
             frame.headers["ack"] ||= (@ack_id += 1).to_s
@@ -380,7 +394,7 @@ module StompOut
         headers["heart-beat"] = [@heartbeat.outgoing_rate, @heartbeat.incoming_rate].join(",")
       end
       headers["server"] = @server_name if @server_name
-      default_session_id = SimpleUUID::UUID.new.to_guid
+      default_session_id = self.class.next_session_id
       if (result = on_connect(frame, frame.headers["login"], frame.headers["passcode"], host, default_session_id))
         @connected = true
         @session_id = (result.is_a?(String) || result.is_a?(Integer)) ? result.to_s : default_session_id
@@ -664,6 +678,13 @@ module StompOut
         version = SUPPORTED_VERSIONS.first
       end
       version
+    end
+
+    # Generate next session ID
+    #
+    # @return [String] session ID
+    def self.next_session_id
+      (@@last_session_id += 1).to_s
     end
 
   end # Server

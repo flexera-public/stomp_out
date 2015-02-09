@@ -156,8 +156,6 @@ describe StompOut::Server do
               @server.receive_data("CONNECT#{accept_version}\nhost:stomp\n\n\000\n")
               @server.receive_data("SUBSCRIBE\ndestination:/queue\nid:1\n\n\000\n")
               @headers = {"destination" => "/queue", "message-id" => "123", "subscription" => "1"}
-              @uuid = flexmock("uuid", :to_guid => "uuid")
-              flexmock(SimpleUUID::UUID).should_receive(:new).and_return(@uuid)
             end
 
             it "sends MESSAGE frame to client" do
@@ -172,7 +170,7 @@ describe StompOut::Server do
               @server.message(@headers, "hello")
               @server.called.should == [:on_connect, :send_data, :on_subscribe, :send_data]
               @server.params[:data].should == "MESSAGE\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue" +
-                                              "\nmessage-id:uuid\nsubscription:1\n\nhello\000\n"
+                                              "\nmessage-id:1\nsubscription:1\n\nhello\000\n"
             end
 
             it "raises ProtocolError if destination header is missing" do
@@ -471,6 +469,18 @@ describe StompOut::Server do
             @server.params[:data].should =~ /CONNECTED.*\nserver:test\/1.0\n/
           end
 
+          it "reports connection to user and allows it to be rejected" do
+            flexmock(@server).should_receive(:on_connect).with(StompOut::Frame, "test", "secret", "stomp", String).
+                and_return(false).once
+            @server.receive_data("CONNECT#{accept_version}\nhost:stomp\nlogin:test\npasscode:secret\n\n\000\n")
+            @server.called.should == [:send_data, :on_error]
+            @server.params[:error].message.should == "Invalid login"
+            length = 73 + (accept_version ? accept_version.size : 0)
+            @server.params[:data].should == "ERROR\ncontent-length:#{length}\ncontent-type:text/plain\nmessage:Invalid login\n" +
+                                            "\nFailed frame:\n-----\nCONNECT#{accept_version}\nhost:stomp\nlogin:test" +
+                                            "\npasscode:secret\n\n\n-----\000\n"
+          end
+
           it "uses on_connect returned value as session ID if it is a string" do
             flexmock(@server).should_receive(:on_connect).and_return("22").once
             @server.receive_data("CONNECT#{accept_version}\nhost:stomp\n\n\000\n")
@@ -487,34 +497,20 @@ describe StompOut::Server do
             @server.params[:data].should =~ /CONNECTED.*\nsession:22\n/
           end
 
-          it "reports connection to user and allows it to be rejected" do
-            flexmock(@server).should_receive(:on_connect).with(StompOut::Frame, "test", "secret", "stomp", String).
-                and_return(false).once
-            @server.receive_data("CONNECT#{accept_version}\nhost:stomp\nlogin:test\npasscode:secret\n\n\000\n")
-            @server.called.should == [:send_data, :on_error]
-            @server.params[:error].message.should == "Invalid login"
-            length = 73 + (accept_version ? accept_version.size : 0)
-            @server.params[:data].should == "ERROR\ncontent-length:#{length}\ncontent-type:text/plain\nmessage:Invalid login\n" +
-                                            "\nFailed frame:\n-----\nCONNECT#{accept_version}\nhost:stomp\nlogin:test" +
-                                            "\npasscode:secret\n\n\n-----\000\n"
-          end
-
           it "sends CONNECTED frame to client if connection accepted" do
-            uuid = flexmock("uuid", :to_guid => "uuid")
-            flexmock(SimpleUUID::UUID).should_receive(:new).and_return(uuid)
+            flexmock(ServerMock).should_receive(:next_session_id).and_return("11").once
             @server.receive_data("CONNECT#{accept_version}\nhost:stomp\nlogin:test\npasscode:secret\n\n\000\n")
             @server.called.should == [:on_connect, :send_data]
-            @server.params[:data].should == "CONNECTED\nsession:uuid\nversion:#{version}\n\n\000\n"
+            @server.params[:data].should == "CONNECTED\nsession:11\nversion:#{version}\n\n\000\n"
           end
         end
 
         context :receive_stomp do
           it "sends CONNECTED frame to client if connection accepted" do
-            uuid = flexmock("uuid", :to_guid => "uuid")
-            flexmock(SimpleUUID::UUID).should_receive(:new).and_return(uuid)
+            flexmock(ServerMock).should_receive(:next_session_id).and_return("11").once
             @server.receive_data("STOMP#{accept_version}\nhost:stomp\nlogin:test\npasscode:secret\n\n\000\n")
             @server.called.should == [:on_connect, :send_data]
-            @server.params[:data].should == "CONNECTED\nsession:uuid\nversion:#{version}\n\n\000\n"
+            @server.params[:data].should == "CONNECTED\nsession:11\nversion:#{version}\n\n\000\n"
           end
         end
 

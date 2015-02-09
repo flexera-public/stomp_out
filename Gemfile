@@ -1,7 +1,6 @@
 source 'https://rubygems.org'
 
 gem 'json', '~> 1.4'
-gem 'simple_uuid', '~> 0.2'
 
 gem 'rake', '~> 10.0', :group => [:test, :development]
 
