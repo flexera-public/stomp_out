@@ -216,7 +216,7 @@ describe StompOut::Server do
                   it "records specified ack ID but leaves it out of frame" do
                     @headers["ack"] = "11"
                     @server.message(@headers, "hello").should == ["123", "11"]
-                    @server.instance_variable_get(:@ack_ids)["123"].should == "11"
+                    @server.instance_variable_get(:@ack_ids)["123"].should == ["11"]
                     @server.called.should == [:on_connect, :send_data, :on_subscribe, :on_unsubscribe, :on_subscribe, :send_data]
                     @server.params[:data].should == "MESSAGE\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue" +
                                                     "\nmessage-id:123\nsubscription:2\n\nhello\000\n"
@@ -224,7 +224,7 @@ describe StompOut::Server do
 
                   it "creates ack ID and records it but leaves it out of frame if none specified" do
                     @server.message(@headers, "hello").should == ["123", "1"]
-                    @server.instance_variable_get(:@ack_ids)["123"].should == "1"
+                    @server.instance_variable_get(:@ack_ids)["123"].should == ["1"]
                     @server.called.should == [:on_connect, :send_data, :on_subscribe, :on_unsubscribe, :on_subscribe, :send_data]
                     @server.params[:data].should == "MESSAGE\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue" +
                                                     "\nmessage-id:123\nsubscription:2\n\nhello\000\n"
@@ -240,7 +240,7 @@ describe StompOut::Server do
                     it "records specified ack ID but leaves it out of frame" do
                       @headers["ack"] = "11"
                       @server.message(@headers, "hello").should == ["123", "11"]
-                      @server.instance_variable_get(:@ack_ids)["123"].should == "11"
+                      @server.instance_variable_get(:@ack_ids)["123"].should == ["11"]
                       @server.called.should == [:on_connect, :send_data, :on_subscribe, :on_unsubscribe, :on_subscribe, :send_data]
                       @server.params[:data].should == "MESSAGE\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue" +
                                                       "\nmessage-id:123\nsubscription:2\n\nhello\000\n"
@@ -248,10 +248,14 @@ describe StompOut::Server do
 
                     it "creates ack ID and records it but leaves it out of frame if none specified" do
                       @server.message(@headers, "hello").should == ["123", "1"]
-                      @server.instance_variable_get(:@ack_ids)["123"].should == "1"
+                      @server.instance_variable_get(:@ack_ids)["123"].should == ["1"]
                       @server.called.should == [:on_connect, :send_data, :on_subscribe, :on_unsubscribe, :on_subscribe, :send_data]
                       @server.params[:data].should == "MESSAGE\ncontent-length:5\ncontent-type:text/plain\ndestination:/queue" +
                                                       "\nmessage-id:123\nsubscription:2\n\nhello\000\n"
+                    end
+
+                    it "raises ApplicationError if message-id is not unique" do
+
                     end
                   else
                     it "adds specified ack ID to frame" do
@@ -1198,6 +1202,36 @@ describe StompOut::Server do
         lambda do
           @server.send(:negotiate_version, frame).should == version
         end.should raise_error(StompOut::ProtocolError, "Incompatible version")
+      end
+    end
+
+    context :to_ack do
+      before(:each) do
+        @server.receive_data("CONNECT\naccept-version:1.0,1.1\nhost:stomp\n\n\000\n")
+        @server.receive_data("SUBSCRIBE\nack:client\ndestination:/queue\nid:1\n\n\000\n")
+        @headers = {"destination" => "/queue", "message-id" => "123", "subscription" => "1"}
+      end
+
+      it "converts message ID to ack ID" do
+        @server.instance_variable_get(:@ack_ids)["123"].should be nil
+        @server.message(@headers, "hello")
+        @server.instance_variable_get(:@ack_ids)["123"].should == ["1"]
+        @server.message(@headers, "hello")
+        @server.instance_variable_get(:@ack_ids)["123"].should == ["1", "2"]
+        @server.send(:to_ack, "123").should == "1"
+        @server.instance_variable_get(:@ack_ids)["123"].should == ["2"]
+      end
+
+      it "deletes cache of ack IDs when empty" do
+        @server.message(@headers, "hello")
+        @server.send(:to_ack, "123").should == "1"
+        @server.instance_variable_get(:@ack_ids)["123"].should be nil
+      end
+
+      it "raises ApplicationError if message ID not found" do
+        lambda do
+          @server.send(:to_ack, "1")
+        end.should raise_error("Unknown 'message-id': \"1\"")
       end
     end
   end

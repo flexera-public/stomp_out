@@ -285,11 +285,11 @@ module StompOut
           # Create ack ID if there is none so that user of this server can rely
           # on always receiving an ack ID (as opposed to a message ID) on ack/nack
           # independent of STOMP version in use
-          ack_id = if @version < "1.2"
-            raise ApplicationError.new("Non-unique message-id; #{message_id}") if @ack_ids.has_key?(message_id)
-            @ack_ids[message_id] = frame.headers.delete("ack") || (@ack_id += 1).to_s
+          if @version < "1.2"
+            ack_id = frame.headers.delete("ack") || (@ack_id += 1).to_s
+            @ack_ids[message_id] = (@ack_ids[message_id] || []) << ack_id
           else
-            frame.headers["ack"] ||= (@ack_id += 1).to_s
+            ack_id = frame.headers["ack"] ||= (@ack_id += 1).to_s
           end
         end
       else
@@ -499,7 +499,7 @@ module StompOut
     # @raise [ProtocolError] missing header
     def receive_ack(frame)
       id, message_id = frame.require(@version, "id" => ["1.0", "1.1"], "message-id" => ["1.2"])
-      on_ack(frame, id || @ack_ids.delete(message_id))
+      on_ack(frame, id || to_ack(message_id))
       true
     end
 
@@ -515,7 +515,7 @@ module StompOut
     def receive_nack(frame)
       raise ProtocolError.new("Invalid command", frame) if @version == "1.0"
       id, message_id = frame.require(@version, "id" => ["1.0", "1.1"], "message-id" => ["1.2"])
-      on_nack(frame, id || @ack_ids.delete(message_id))
+      on_nack(frame, id || to_ack(message_id))
       true
     end
 
@@ -678,6 +678,25 @@ module StompOut
         version = SUPPORTED_VERSIONS.first
       end
       version
+    end
+
+    # Convert message ID to ack ID
+    # Allow for the possibility of a message being resent before being acknowledged
+    # (or message IDs not being unique), in which case arbitrarily convert to oldest ack ID
+    #
+    # @param [String] message_id to be converted
+    #
+    # @return [String] ack ID
+    #
+    # @raise [ApplicationError] message ID unknown
+    def to_ack(message_id)
+      if (ids = @ack_ids[message_id])
+        id = ids.shift
+        @ack_ids.delete(message_id) if ids.empty?
+        id
+      else
+        raise ApplicationError.new("Unknown 'message-id': #{message_id.inspect}")
+      end
     end
 
     # Generate next session ID
