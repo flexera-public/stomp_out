@@ -107,6 +107,13 @@ describe StompOut::Parser do
       frame.body.should == ""
     end
 
+    it "parses header whose value contains a ':'" do
+      @parser << "MESSAGE\ndestination:/que:ue:\n\n\000\n"
+      frame = @parser.next
+      frame.command.should == "MESSAGE"
+      frame.headers.should == {"destination" => "/que:ue:"}
+    end
+
     context "when content-length header" do
       it "uses it to determine length of body" do
         @parser << "MESSAGE\ncontent-length:6\n\nhello\n\000"

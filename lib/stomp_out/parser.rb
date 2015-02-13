@@ -82,7 +82,7 @@ module StompOut
         @frame.command, headers = match.captures
         @buffer = match.post_match
         headers.split(/\r?\n/).each do |data|
-          if data.match(/^\s*(\S+)\s*:\s*(.*?\s*)$/)
+          if data.match(/^\s*([^\s:]+)\s*:\s*(.*?\s*)$/)
             @frame.headers[$1] = $2 unless @frame.headers.has_key?($1)
           end
         end
