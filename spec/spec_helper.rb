@@ -1,3 +1,7 @@
+unless RUBY_VERSION < "1.9"
+  require 'coveralls'
+  Coveralls.wear!
+end
 require 'rubygems'
 require 'bundler/setup'
 require 'rspec'

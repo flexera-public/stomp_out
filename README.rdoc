@@ -1,4 +1,6 @@
 {<img src="https://travis-ci.org/rightscale/stomp_out.svg?branch=master" alt="Build Status" />}[https://travis-ci.org/rightscale/stomp_out]
+{<img src="https://coveralls.io/repos/rightscale/stomp_out/badge.svg?branch=master&service=github" alt="Coverage Status" />}[https://coveralls.io/github/rightscale/stomp_out?branch=master]
+{<img src="https://gemnasium.com/rightscale/stomp_out.svg" alt="Dependency Status" />}[https://gemnasium.com/rightscale/stomp_out]
 
 = Introduction
 

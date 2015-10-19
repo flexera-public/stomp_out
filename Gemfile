@@ -14,6 +14,7 @@ group :test do
   gem 'rack', '~> 1.5'
   gem 'websocket-rack', '~> 0.4'
   gem 'thin'
+  gem 'coveralls', :platforms => [:ruby_19, :ruby_20, :ruby_21]
 end
 
 group :development do
