@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 
-gem 'json', '~> 1.4'
+gem 'json', '~> 2.3'
 
 gem 'rake', '~> 10.0', :group => [:test, :development]
 
