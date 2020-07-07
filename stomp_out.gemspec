@@ -54,7 +54,7 @@ Gem::Specification.new do |s|
       s.add_development_dependency(%q<pry>, [">= 0"])
       s.add_development_dependency(%q<pry-byebug>, [">= 0"])
     else
-      s.add_dependency(%q<json>, ["~> 2.3"])
+      s.add_dependency(%q<json>, [">= 1.8", "< 3"])
       s.add_dependency(%q<rake>, ["~> 10.0"])
       s.add_dependency(%q<jeweler>, ["~> 2.0"])
       s.add_dependency(%q<ruby-debug>, [">= 0"])
@@ -62,7 +62,7 @@ Gem::Specification.new do |s|
       s.add_dependency(%q<pry-byebug>, [">= 0"])
     end
   else
-    s.add_dependency(%q<json>, ["~> 2.3"])
+    s.add_dependency(%q<json>, [">= 1.8", "< 3"])
     s.add_dependency(%q<rake>, ["~> 10.0"])
     s.add_dependency(%q<jeweler>, ["~> 2.0"])
     s.add_dependency(%q<ruby-debug>, [">= 0"])
